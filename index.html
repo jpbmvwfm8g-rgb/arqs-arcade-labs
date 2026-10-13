@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ARQS Arcade Labs</title>
+<style>
+body { background: #0a0a0a; color: #0f0; font-family: 'Courier New', monospace; text-align: center; padding: 40px; }
+h1 { font-size: 2.5em; text-shadow: 0 0 10px #0f0; }
+.games { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-top: 40px; }
+.game-card { background: #111; border: 2px solid #0f0; padding: 20px; width: 250px; border-radius: 10px; transition: transform 0.2s; }
+.game-card:hover { transform: scale(1.05); box-shadow: 0 0 20px #0f0; }
+a { color: #0f0; text-decoration: none; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>ARQS ARCADE LABS</h1>
+<p>Proof-of-concept interactive labs from the ARQS Software Intelligence Systems.</p>
+<div class="games">
+  <div class="game-card">
+    <h2>Paddle Lab</h2>
+    <p>Classic paddle defense with progressive speed and local high scores.</p>
+    <a href="paddle-lab.html">Play Now</a>
+  </div>
+  <div class="game-card">
+    <h2>Break Lab</h2>
+    <p>Clear the colored blocks. Lives, scoring, and persistence.</p>
+    <a href="break-lab.html">Play Now</a>
+  </div>
+  <div class="game-card">
+    <h2>Drop Lab</h2>
+    <p>Stack falling shapes, clear lines, and climb the high score.</p>
+    <a href="drop-lab.html">Play Now</a>
+  </div>
+</div>
+<p style="margin-top: 40px;">All labs use pure HTML5 Canvas + vanilla JS. LocalStorage for best scores. Ready for ARQS integration events.</p>
+<p><small>ARQS Software · Kelowna, BC · 2026</small></p>
+</body>
+</html>
