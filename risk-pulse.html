@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ARQS Risk Pulse Dashboard</title>
+<style>
+body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; padding: 20px; }
+h1 { color: #58a6ff; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 20px 0; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+.card h3 { margin: 0 0 8px; color: #58a6ff; }
+.metric { font-size: 2em; font-weight: bold; color: #3fb950; }
+button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>ARQS Risk Pulse</h1>
+<p>Interactive dashboard lab — simulated physical-world risk indicators for demonstration.</p>
+<div class="cards">
+  <div class="card"><h3>Hazard Index</h3><div class="metric" id="hazard">42</div></div>
+  <div class="card"><h3>Exposure Score</h3><div class="metric" id="exposure">67</div></div>
+  <div class="card"><h3>Consequence Band</h3><div class="metric" id="consequence">B</div></div>
+  <div class="card"><h3>Confidence</h3><div class="metric" id="conf">0.84</div></div>
+</div>
+<button onclick="refresh()">Refresh Indicators</button>
+<p><small>Values are simulated for the ARQS productization lab. Not operational risk intelligence.</small></p>
+<script>
+function refresh() {
+  document.getElementById('hazard').textContent = Math.floor(Math.random() * 80 + 10);
+  document.getElementById('exposure').textContent = Math.floor(Math.random() * 90 + 5);
+  document.getElementById('consequence').textContent = ['A','B','C','D'][Math.floor(Math.random()*4)];
+  document.getElementById('conf').textContent = (Math.random() * 0.3 + 0.7).toFixed(2);
+}
+</script>
+</body>
+</html>
