@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ARQS Break Lab</title>
+<style>
+body { background: #111; color: #0ff; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
+canvas { border: 2px solid #0ff; background: #000; }
+</style>
+</head>
+<body>
+<h1>ARQS Break Lab</h1>
+<div>Score: <span id="score">0</span> | Lives: <span id="lives">3</span> | Best: <span id="best">0</span></div>
+<canvas id="game" width="600" height="500"></canvas>
+<p>Move paddle with mouse or arrows. Clear the blocks!</p>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let paddle = {x: 250, y: 470, w: 100, h: 15};
+let ball = {x: 300, y: 400, dx: 4, dy: -4, r: 8};
+let score = 0;
+let lives = 3;
+let best = parseInt(localStorage.getItem('arqsBreakBest') || '0');
+document.getElementById('best').textContent = best;
+let bricks = [];
+const brickRows = 5, brickCols = 8, brickW = 60, brickH = 20, brickPad = 10, brickOffsetTop = 50, brickOffsetLeft = 35;
+
+function initBricks() {
+  bricks = [];
+  for (let c = 0; c < brickCols; c++) {
+    bricks[c] = [];
+    for (let r = 0; r < brickRows; r++) {
+      bricks[c][r] = {x: 0, y: 0, status: 1, color: `hsl(${r * 40}, 100%, 50%)`};
+    }
+  }
+}
+initBricks();
+
+document.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  paddle.x = e.clientX - rect.left - paddle.w / 2;
+  if (paddle.x < 0) paddle.x = 0;
+  if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
+});
+
+function collisionDetection() {
+  for (let c = 0; c < brickCols; c++) {
+    for (let r = 0; r < brickRows; r++) {
+      const b = bricks[c][r];
+      if (b.status === 1) {
+        if (ball.x > b.x && ball.x < b.x + brickW && ball.y > b.y && ball.y < b.y + brickH) {
+          ball.dy = -ball.dy;
+          b.status = 0;
+          score += 10;
+          document.getElementById('score').textContent = score;
+          if (score > best) {
+            best = score;
+            localStorage.setItem('arqsBreakBest', best);
+            document.getElementById('best').textContent = best;
+          }
+          // Check win
+          let allGone = true;
+          for (let cc = 0; cc < brickCols; cc++) {
+            for (let rr = 0; rr < brickRows; rr++) {
+              if (bricks[cc][rr].status === 1) allGone = false;
+            }
+          }
+          if (allGone) {
+            alert('You cleared the board! Score: ' + score);
+            document.location.reload();
+          }
+        }
+      }
+    }
+  }
+}
+
+function update() {
+  ball.x += ball.dx;
+  ball.y += ball.dy;
+  if (ball.x + ball.r > canvas.width || ball.x - ball.r < 0) ball.dx = -ball.dx;
+  if (ball.y - ball.r < 0) ball.dy = -ball.dy;
+  else if (ball.y + ball.r > canvas.height) {
+    lives--;
+    document.getElementById('lives').textContent = lives;
+    if (!lives) {
+      alert('Game Over! Score: ' + score);
+      document.location.reload();
+    } else {
+      ball.x = 300; ball.y = 400; ball.dx = 4; ball.dy = -4;
+    }
+  }
+  // Paddle
+  if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
+    ball.dy = -Math.abs(ball.dy);
+  }
+  collisionDetection();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Bricks
+  for (let c = 0; c < brickCols; c++) {
+    for (let r = 0; r < brickRows; r++) {
+      if (bricks[c][r].status === 1) {
+        const brickX = c * (brickW + brickPad) + brickOffsetLeft;
+        const brickY = r * (brickH + brickPad) + brickOffsetTop;
+        bricks[c][r].x = brickX;
+        bricks[c][r].y = brickY;
+        ctx.fillStyle = bricks[c][r].color;
+        ctx.fillRect(brickX, brickY, brickW, brickH);
+      }
+    }
+  }
+  // Ball
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fillStyle = '#0ff';
+  ctx.fill();
+  // Paddle
+  ctx.fillStyle = '#0ff';
+  ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
