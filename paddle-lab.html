@@ -6,14 +6,17 @@
 <style>
 body { background: #111; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
 canvas { border: 2px solid #0f0; background: #000; }
-.hud { margin: 10px; }
+.hud { margin: 10px; font-size: 1.1em; }
+button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 5px; cursor: pointer; font-family: monospace; font-weight: bold; }
+button:hover { background: #0a0; }
 </style>
 </head>
 <body>
 <h1>ARQS Paddle Lab</h1>
-<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span></div>
+<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span> | Lives: <span id="lives">3</span></div>
 <canvas id="game" width="800" height="500"></canvas>
-<p>Use mouse or arrow keys / W S to move paddle. Keep the ball in play!</p>
+<p>Mouse or ← → / A D to move. P or Space to pause. Keep the ball in play!</p>
+<button id="restart">Restart</button>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -21,19 +24,45 @@ let ball = {x: 400, y: 250, dx: 5, dy: 4, r: 10};
 let paddle = {x: 350, y: 470, w: 100, h: 15, speed: 8};
 let score = 0;
 let best = parseInt(localStorage.getItem('arqsPaddleBest') || '0');
+let lives = 3;
+let paused = false;
+let gameOver = false;
 document.getElementById('best').textContent = best;
+document.getElementById('lives').textContent = lives;
 let keys = {};
 
-document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === 'p' || e.key === 'P' || e.key === ' ') {
+    e.preventDefault();
+    if (!gameOver) paused = !paused;
+  }
+});
 document.addEventListener('keyup', e => keys[e.key] = false);
 canvas.addEventListener('mousemove', e => {
+  if (paused || gameOver) return;
   const rect = canvas.getBoundingClientRect();
   paddle.x = e.clientX - rect.left - paddle.w / 2;
   if (paddle.x < 0) paddle.x = 0;
   if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
 });
 
+document.getElementById('restart').addEventListener('click', resetGame);
+
+function resetGame() {
+  score = 0;
+  lives = 3;
+  paused = false;
+  gameOver = false;
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = lives;
+  ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+  paddle.x = 350;
+}
+
 function update() {
+  if (paused || gameOver) return;
+
   // Paddle keyboard
   if (keys['ArrowLeft'] || keys['a'] || keys['A']) paddle.x -= paddle.speed;
   if (keys['ArrowRight'] || keys['d'] || keys['D']) paddle.x += paddle.speed;
@@ -50,9 +79,10 @@ function update() {
   // Paddle collision
   if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
     ball.dy *= -1;
-    // Add some spin based on hit position
     const hitPos = (ball.x - paddle.x) / paddle.w - 0.5;
-    ball.dx += hitPos * 3;
+    ball.dx += hitPos * 2.5;
+    // Clamp speed
+    ball.dx = Math.max(-12, Math.min(12, ball.dx));
     score++;
     document.getElementById('score').textContent = score;
     if (score > best) {
@@ -60,16 +90,23 @@ function update() {
       localStorage.setItem('arqsPaddleBest', best);
       document.getElementById('best').textContent = best;
     }
-    // Speed up slightly
-    ball.dx *= 1.02;
-    ball.dy *= 1.02;
+    // Mild speed up
+    const speed = Math.hypot(ball.dx, ball.dy);
+    if (speed < 15) {
+      ball.dx *= 1.015;
+      ball.dy *= 1.015;
+    }
   }
 
   // Miss
   if (ball.y + ball.r > canvas.height) {
-    score = 0;
-    document.getElementById('score').textContent = score;
-    ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+    lives--;
+    document.getElementById('lives').textContent = lives;
+    if (lives <= 0) {
+      gameOver = true;
+    } else {
+      ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+    }
   }
 }
 
@@ -84,13 +121,34 @@ function draw() {
   // Paddle
   ctx.fillStyle = '#0f0';
   ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
-  // Center line optional
+  // Center line
   ctx.strokeStyle = '#333';
   ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(0, canvas.height / 2);
   ctx.lineTo(canvas.width, canvas.height / 2);
   ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (paused && !gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
+  }
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#f00';
+    ctx.font = '48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 20);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '24px monospace';
+    ctx.fillText('Score: ' + score, canvas.width / 2, canvas.height / 2 + 30);
+  }
 }
 
 function loop() {
