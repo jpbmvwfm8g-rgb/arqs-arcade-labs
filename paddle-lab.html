@@ -11,93 +11,200 @@ canvas { border: 2px solid #0f0; background: #000; }
 </head>
 <body>
 <h1>ARQS Paddle Lab</h1>
-<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span></div>
+<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span> | Lives: <span id="lives">3</span></div>
 <canvas id="game" width="800" height="500"></canvas>
-<p>Use mouse or arrow keys / W S to move paddle. Keep the ball in play!</p>
+<p>Use mouse or arrow keys / W S to move paddle. Keep the ball in play! Space / P = pause, Enter = restart after game over.</p>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let ball = {x: 400, y: 250, dx: 5, dy: 4, r: 10};
+const START_LIVES = 3;
+const BASE_SPEED = 6.4;
+const MAX_SPEED = 14;
+const MAX_BOUNCE_ANGLE = Math.PI / 3; // 60 degrees from vertical
+
+let ball, particles = [];
 let paddle = {x: 350, y: 470, w: 100, h: 15, speed: 8};
 let score = 0;
+let lives = START_LIVES;
+let paused = false;
+let gameOver = false;
 let best = parseInt(localStorage.getItem('arqsPaddleBest') || '0');
 document.getElementById('best').textContent = best;
 let keys = {};
 
-document.addEventListener('keydown', e => keys[e.key] = true);
+function resetBall() {
+  const angle = (Math.random() * 0.8 - 0.4);
+  ball = {x: canvas.width / 2, y: 250, dx: BASE_SPEED * Math.sin(angle), dy: BASE_SPEED * Math.cos(angle), r: 10};
+}
+
+function updateHud() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = lives;
+}
+
+function restart() {
+  score = 0;
+  lives = START_LIVES;
+  gameOver = false;
+  paused = false;
+  particles = [];
+  resetBall();
+  updateHud();
+}
+
+function togglePause() {
+  if (!gameOver) paused = !paused;
+}
+
+function spawnParticles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const a = -Math.PI * Math.random();
+    const s = 1 + Math.random() * 3;
+    particles.push({x, y, dx: Math.cos(a) * s, dy: Math.sin(a) * s, life: 1});
+  }
+}
+
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    if (!e.repeat) togglePause();
+  } else if (e.key === 'p' || e.key === 'P') {
+    if (!e.repeat) togglePause();
+  } else if (e.key === 'Enter' && gameOver) {
+    restart();
+  }
+});
 document.addEventListener('keyup', e => keys[e.key] = false);
 canvas.addEventListener('mousemove', e => {
+  if (paused) return;
   const rect = canvas.getBoundingClientRect();
   paddle.x = e.clientX - rect.left - paddle.w / 2;
   if (paddle.x < 0) paddle.x = 0;
   if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
 });
+canvas.addEventListener('click', () => { if (gameOver) restart(); });
 
 function update() {
-  // Paddle keyboard
+  if (paused || gameOver) return;
+
   if (keys['ArrowLeft'] || keys['a'] || keys['A']) paddle.x -= paddle.speed;
   if (keys['ArrowRight'] || keys['d'] || keys['D']) paddle.x += paddle.speed;
   if (paddle.x < 0) paddle.x = 0;
   if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
 
+  const prevY = ball.y;
   ball.x += ball.dx;
   ball.y += ball.dy;
 
   // Walls
-  if (ball.x - ball.r < 0 || ball.x + ball.r > canvas.width) ball.dx *= -1;
-  if (ball.y - ball.r < 0) ball.dy *= -1;
+  if (ball.x - ball.r < 0) { ball.x = ball.r; ball.dx = Math.abs(ball.dx); }
+  if (ball.x + ball.r > canvas.width) { ball.x = canvas.width - ball.r; ball.dx = -Math.abs(ball.dx); }
+  if (ball.y - ball.r < 0) { ball.y = ball.r; ball.dy = Math.abs(ball.dy); }
 
-  // Paddle collision
-  if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
-    ball.dy *= -1;
-    // Add some spin based on hit position
-    const hitPos = (ball.x - paddle.x) / paddle.w - 0.5;
-    ball.dx += hitPos * 3;
+  // Paddle collision: ball bottom crosses paddle top while overlapping horizontally
+  if (ball.dy > 0 && prevY + ball.r <= paddle.y + ball.dy &&
+      ball.y + ball.r >= paddle.y && ball.y - ball.r <= paddle.y + paddle.h &&
+      ball.x + ball.r > paddle.x && ball.x - ball.r < paddle.x + paddle.w) {
+    // Hit position -1 (left edge) .. 1 (right edge) sets the outgoing angle
+    const hit = Math.max(-1, Math.min(1, (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2)));
+    const angle = hit * MAX_BOUNCE_ANGLE;
+    const speed = Math.min(Math.hypot(ball.dx, ball.dy) * 1.03, MAX_SPEED);
+    ball.dx = speed * Math.sin(angle);
+    ball.dy = -speed * Math.cos(angle);
+    ball.y = paddle.y - ball.r;
+    spawnParticles(ball.x, paddle.y, 12);
     score++;
-    document.getElementById('score').textContent = score;
     if (score > best) {
       best = score;
       localStorage.setItem('arqsPaddleBest', best);
       document.getElementById('best').textContent = best;
     }
-    // Speed up slightly
-    ball.dx *= 1.02;
-    ball.dy *= 1.02;
+    updateHud();
   }
 
   // Miss
-  if (ball.y + ball.r > canvas.height) {
-    score = 0;
-    document.getElementById('score').textContent = score;
-    ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+  if (ball.y - ball.r > canvas.height) {
+    lives--;
+    spawnParticles(Math.max(0, Math.min(canvas.width, ball.x)), canvas.height - 2, 20);
+    if (lives <= 0) {
+      lives = 0;
+      gameOver = true;
+    } else {
+      resetBall();
+    }
+    updateHud();
   }
+}
+
+function updateParticles() {
+  for (const p of particles) {
+    p.x += p.dx;
+    p.y += p.dy;
+    p.dy += 0.1;
+    p.life -= 0.03;
+  }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function centerText(text, y, size) {
+  ctx.font = size + 'px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#0f0';
+  ctx.fillText(text, canvas.width / 2, y);
 }
 
 function draw() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  // Ball
-  ctx.beginPath();
-  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
-  ctx.fillStyle = '#0f0';
-  ctx.fill();
-  // Paddle
-  ctx.fillStyle = '#0f0';
-  ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
-  // Center line optional
+  // Center line
   ctx.strokeStyle = '#333';
   ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(0, canvas.height / 2);
   ctx.lineTo(canvas.width, canvas.height / 2);
   ctx.stroke();
+  ctx.setLineDash([]);
+  // Particles
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = '#0f0';
+    ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+  }
+  ctx.globalAlpha = 1;
+  // Ball
+  if (!gameOver) {
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f0';
+    ctx.fill();
+  }
+  // Paddle
+  ctx.fillStyle = '#0f0';
+  ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+  // Overlays
+  if (gameOver || paused) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (gameOver) {
+      centerText('GAME OVER', 230, 48);
+      centerText('Score: ' + score + '  Best: ' + best, 275, 20);
+      centerText('Press Enter or click to play again', 310, 18);
+    } else {
+      centerText('PAUSED', 240, 48);
+      centerText('Press Space or P to resume', 280, 18);
+    }
+  }
 }
 
 function loop() {
   update();
+  if (!paused) updateParticles();
   draw();
   requestAnimationFrame(loop);
 }
+resetBall();
+updateHud();
 loop();
 </script>
 </body>
