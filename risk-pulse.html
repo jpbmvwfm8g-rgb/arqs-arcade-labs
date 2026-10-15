@@ -2,15 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ARQS Risk Pulse Dashboard</title>
 <style>
-body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; padding: 20px; }
-h1 { color: #58a6ff; }
+* { box-sizing: border-box; }
+body { background: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; padding: 20px; max-width: 900px; margin: 0 auto; }
+h1 { color: #58a6ff; font-size: 1.6em; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 20px 0; }
 .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
 .card h3 { margin: 0 0 8px; color: #58a6ff; }
 .metric { font-size: 2em; font-weight: bold; color: #3fb950; }
-button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+.metric.green { color: #3fb950; }
+.metric.yellow { color: #d29922; }
+.metric.red { color: #f85149; }
+.chart { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.chart h3 { margin: 0 0 8px; color: #58a6ff; }
+.chart canvas { width: 100%; height: 180px; display: block; }
+.legend { font-size: 0.85em; margin-top: 8px; }
+.legend span { margin-right: 12px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button { background: #238636; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 1em; }
+button.secondary { background: #30363d; }
+@media (max-width: 480px) {
+  body { padding: 12px; }
+  .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .metric { font-size: 1.6em; }
+  .actions button { flex: 1; }
+}
 </style>
 </head>
 <body>
@@ -22,15 +40,114 @@ button { background: #238636; color: white; border: none; padding: 8px 16px; bor
   <div class="card"><h3>Consequence Band</h3><div class="metric" id="consequence">B</div></div>
   <div class="card"><h3>Confidence</h3><div class="metric" id="conf">0.84</div></div>
 </div>
-<button onclick="refresh()">Refresh Indicators</button>
-<p><small>Values are simulated for the ARQS productization lab. Not operational risk intelligence.</small></p>
+<div class="chart">
+  <h3>History (last 10)</h3>
+  <canvas id="history" role="img" aria-label="Line chart of last 10 hazard and exposure values"></canvas>
+  <div class="legend"><span style="color:#58a6ff">&#9632; Hazard</span><span style="color:#bc8cff">&#9632; Exposure</span></div>
+</div>
+<div class="actions">
+  <button onclick="refresh()">Refresh Indicators</button>
+  <button class="secondary" onclick="resetAll()">Reset</button>
+</div>
+<p><small>Color thresholds: green &lt; 40, yellow 40&ndash;69, red &ge; 70 (hazard/exposure); confidence green &ge; 0.85, yellow &ge; 0.75, red below. Values are simulated for the ARQS productization lab. Not operational risk intelligence.</small></p>
 <script>
-function refresh() {
-  document.getElementById('hazard').textContent = Math.floor(Math.random() * 80 + 10);
-  document.getElementById('exposure').textContent = Math.floor(Math.random() * 90 + 5);
-  document.getElementById('consequence').textContent = ['A','B','C','D'][Math.floor(Math.random()*4)];
-  document.getElementById('conf').textContent = (Math.random() * 0.3 + 0.7).toFixed(2);
+const KEY = 'arqs-risk-pulse-v1';
+const MAX = 10;
+const DEFAULT = {hazard: [42], exposure: [67], consequence: 'B', conf: 0.84};
+let state = load();
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && Array.isArray(s.hazard) && Array.isArray(s.exposure) && s.hazard.length && s.exposure.length) {
+      return {
+        hazard: s.hazard.map(Number).slice(-MAX),
+        exposure: s.exposure.map(Number).slice(-MAX),
+        consequence: ['A','B','C','D'].includes(s.consequence) ? s.consequence : 'B',
+        conf: Number.isFinite(+s.conf) ? +s.conf : 0.84
+      };
+    }
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(DEFAULT));
 }
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+}
+function level(v) { return v >= 70 ? 'red' : v >= 40 ? 'yellow' : 'green'; }
+function confLevel(v) { return v >= 0.85 ? 'green' : v >= 0.75 ? 'yellow' : 'red'; }
+function consLevel(c) { return c === 'A' ? 'green' : c === 'B' ? 'yellow' : 'red'; }
+function setMetric(id, text, lvl) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'metric ' + lvl;
+}
+const COLORS = {green: '#3fb950', yellow: '#d29922', red: '#f85149'};
+
+function drawSeries(ctx, data, color, w, h, pad) {
+  const step = (w - pad * 2) / (MAX - 1);
+  const y = v => h - pad - (Math.max(0, Math.min(100, v)) / 100) * (h - pad * 2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = pad + i * step;
+    i ? ctx.lineTo(x, y(v)) : ctx.moveTo(x, y(v));
+  });
+  ctx.stroke();
+  data.forEach((v, i) => {
+    ctx.fillStyle = COLORS[level(v)];
+    ctx.beginPath();
+    ctx.arc(pad + i * step, y(v), 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+function drawChart() {
+  const cv = document.getElementById('history');
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const pad = 14;
+  ctx.lineWidth = 1;
+  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = '#8b949e';
+  [[0, '0'], [40, '40'], [70, '70'], [100, '100']].forEach(([t, label]) => {
+    const yy = h - pad - (t / 100) * (h - pad * 2);
+    ctx.strokeStyle = t === 40 ? '#d2992266' : t === 70 ? '#f8514966' : '#30363d';
+    ctx.beginPath(); ctx.moveTo(pad, yy); ctx.lineTo(w - pad, yy); ctx.stroke();
+    ctx.fillText(label, 2, yy - 2);
+  });
+  drawSeries(ctx, state.hazard, '#58a6ff', w, h, pad);
+  drawSeries(ctx, state.exposure, '#bc8cff', w, h, pad);
+}
+function render() {
+  const hz = state.hazard[state.hazard.length - 1];
+  const ex = state.exposure[state.exposure.length - 1];
+  setMetric('hazard', hz, level(hz));
+  setMetric('exposure', ex, level(ex));
+  setMetric('consequence', state.consequence, consLevel(state.consequence));
+  setMetric('conf', state.conf.toFixed(2), confLevel(state.conf));
+  drawChart();
+}
+function refresh() {
+  state.hazard.push(Math.floor(Math.random() * 80 + 10));
+  state.exposure.push(Math.floor(Math.random() * 90 + 5));
+  state.hazard = state.hazard.slice(-MAX);
+  state.exposure = state.exposure.slice(-MAX);
+  state.consequence = ['A','B','C','D'][Math.floor(Math.random()*4)];
+  state.conf = Math.random() * 0.3 + 0.7;
+  save();
+  render();
+}
+function resetAll() {
+  try { localStorage.removeItem(KEY); } catch (e) {}
+  state = JSON.parse(JSON.stringify(DEFAULT));
+  render();
+}
+window.addEventListener('resize', drawChart);
+render();
 </script>
 </body>
 </html>
