@@ -2,26 +2,52 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ARQS Drop Lab</title>
 <style>
 body { background: #111; color: #ff0; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
-canvas { border: 2px solid #ff0; background: #000; }
+canvas { border: 2px solid #ff0; background: #000; display: block; }
+#stats { margin-bottom: 8px; }
+#wrap { display: flex; gap: 16px; align-items: flex-start; }
+#side { width: 130px; text-align: center; }
+#side canvas { margin: 4px auto 12px; }
+#board { position: relative; }
+#overlay { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.8); color: #ff0; text-align: center; }
+#overlay.show { display: flex; }
+#overlay h2 { margin: 0 0 8px; }
+#overlay button { background: #000; color: #ff0; border: 2px solid #ff0; font-family: monospace; font-size: 16px; padding: 6px 16px; cursor: pointer; margin-top: 12px; }
+#overlay button:hover, #overlay button:focus { background: #ff0; color: #000; }
 </style>
 </head>
 <body>
 <h1>ARQS Drop Lab</h1>
-<div>Score: <span id="score">0</span> | Lines: <span id="lines">0</span> | Best: <span id="best">0</span></div>
-<canvas id="game" width="300" height="600"></canvas>
-<p>Arrow keys to move/rotate, Down to drop faster. Stack the blocks and clear lines!</p>
+<div id="stats">Score: <span id="score">0</span> | Lines: <span id="lines">0</span> | Level: <span id="level">1</span> | Best: <span id="best">0</span></div>
+<div id="wrap">
+  <div id="board">
+    <canvas id="game" width="300" height="600"></canvas>
+    <div id="overlay" role="dialog" aria-live="polite">
+      <h2 id="ovTitle"></h2>
+      <div id="ovText"></div>
+      <button id="ovBtn" type="button"></button>
+    </div>
+  </div>
+  <div id="side">
+    <div>NEXT</div>
+    <canvas id="next" width="120" height="120"></canvas>
+    <div>HOLD (C)</div>
+    <canvas id="hold" width="120" height="120"></canvas>
+  </div>
+</div>
+<p>&larr;/&rarr; move, &uarr; rotate, &darr; soft drop, Space hard drop, C hold, P/Esc pause.</p>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const nextCtx = document.getElementById('next').getContext('2d');
+const holdCtx = document.getElementById('hold').getContext('2d');
+const overlay = document.getElementById('overlay');
+const ovBtn = document.getElementById('ovBtn');
 const COLS = 10, ROWS = 20, BLOCK = 30;
-let board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
-let score = 0, lines = 0;
-let best = parseInt(localStorage.getItem('arqsDropBest') || '0');
-document.getElementById('best').textContent = best;
-let current = null, next = null;
 const shapes = [
   [[1,1,1,1]], // I
   [[1,1],[1,1]], // O
@@ -32,21 +58,90 @@ const shapes = [
   [[0,1,1],[1,1,0]] // Z
 ];
 const colors = ['#0f0','#ff0','#f0f','#0ff','#f80','#f00','#08f'];
+const LINE_POINTS = [0, 100, 300, 500, 800];
+const CLEAR_MS = 300;
 
-function randomShape() {
-  const i = Math.floor(Math.random() * shapes.length);
-  return {shape: shapes[i], color: colors[i], x: 3, y: 0};
+let board, score, lines, level, current, next, hold, canHold, bag;
+let state = 'playing'; // playing | paused | clearing | over
+let dropTimer, clearTimer, clearRows, particles, lastTime = 0;
+let best = parseInt(localStorage.getItem('arqsDropBest') || '0');
+document.getElementById('best').textContent = best;
+
+function newPiece(i) {
+  return {shape: shapes[i], color: colors[i], idx: i, x: Math.floor((COLS - shapes[i][0].length) / 2), y: 0};
+}
+
+function randomPiece() {
+  if (!bag || !bag.length) {
+    bag = shapes.map((_, i) => i);
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+  }
+  return newPiece(bag.pop());
+}
+
+function dropInterval() {
+  return Math.max(80, 800 - (level - 1) * 70);
+}
+
+function updateStats() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('lines').textContent = lines;
+  document.getElementById('level').textContent = level;
+  if (score > best) {
+    best = score;
+    localStorage.setItem('arqsDropBest', best);
+    document.getElementById('best').textContent = best;
+  }
+}
+
+function showOverlay(title, text, btn) {
+  document.getElementById('ovTitle').textContent = title;
+  document.getElementById('ovText').textContent = text;
+  ovBtn.textContent = btn;
+  overlay.classList.add('show');
+  ovBtn.focus();
+}
+
+function hideOverlay() { overlay.classList.remove('show'); }
+
+function reset() {
+  board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+  score = 0; lines = 0; level = 1;
+  hold = null; canHold = true; bag = [];
+  particles = []; clearRows = [];
+  dropTimer = 0; clearTimer = 0;
+  next = randomPiece();
+  state = 'playing';
+  hideOverlay();
+  updateStats();
+  spawn();
 }
 
 function spawn() {
-  current = next || randomShape();
-  next = randomShape();
-  if (collision(current.shape, current.x, current.y)) {
-    alert('Game Over! Score: ' + score);
-    document.location.reload();
+  current = next;
+  next = randomPiece();
+  canHold = true;
+  dropTimer = 0;
+  if (collision(current.shape, current.x, current.y)) gameOver();
+}
+
+function gameOver() {
+  state = 'over';
+  showOverlay('GAME OVER', 'Score: ' + score + ' | Lines: ' + lines + ' | Level: ' + level, 'Play Again');
+}
+
+function togglePause() {
+  if (state === 'playing') {
+    state = 'paused';
+    showOverlay('PAUSED', 'Press P or Esc to resume', 'Resume');
+  } else if (state === 'paused') {
+    state = 'playing';
+    hideOverlay();
   }
 }
-spawn();
 
 function collision(shape, x, y) {
   for (let r = 0; r < shape.length; r++) {
@@ -60,100 +155,210 @@ function collision(shape, x, y) {
   return false;
 }
 
+function burst(x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    particles.push({x, y, vx: (Math.random() - 0.5) * 240, vy: (Math.random() - 0.7) * 240,
+      life: 0.5 + Math.random() * 0.4, max: 0.9, color});
+  }
+}
+
 function merge() {
   current.shape.forEach((row, r) => {
     row.forEach((val, c) => {
-      if (val && current.y + r >= 0) board[current.y + r][current.x + c] = current.color;
+      if (val && current.y + r >= 0) {
+        board[current.y + r][current.x + c] = current.color;
+        burst((current.x + c + 0.5) * BLOCK, (current.y + r + 1) * BLOCK, current.color, 2);
+      }
     });
   });
 }
 
-function clearLines() {
-  let cleared = 0;
-  for (let r = ROWS - 1; r >= 0; r--) {
-    if (board[r].every(cell => cell)) {
-      board.splice(r, 1);
-      board.unshift(Array(COLS).fill(0));
-      cleared++;
-      r++;
-    }
+function lockPiece() {
+  merge();
+  clearRows = [];
+  for (let r = 0; r < ROWS; r++) if (board[r].every(cell => cell)) clearRows.push(r);
+  if (clearRows.length) {
+    state = 'clearing';
+    clearTimer = 0;
+    clearRows.forEach(r => {
+      for (let c = 0; c < COLS; c++) burst((c + 0.5) * BLOCK, (r + 0.5) * BLOCK, board[r][c], 3);
+    });
+  } else {
+    spawn();
   }
-  if (cleared) {
-    lines += cleared;
-    score += cleared * 100 * cleared; // bonus for multi
-    document.getElementById('score').textContent = score;
-    document.getElementById('lines').textContent = lines;
-    if (score > best) {
-      best = score;
-      localStorage.setItem('arqsDropBest', best);
-      document.getElementById('best').textContent = best;
-    }
-  }
+}
+
+function finishClear() {
+  const cleared = clearRows.length;
+  clearRows.slice().reverse().forEach(r => {
+    board.splice(r, 1);
+    board.unshift(Array(COLS).fill(0));
+  });
+  clearRows = [];
+  lines += cleared;
+  score += LINE_POINTS[cleared] * level;
+  level = Math.floor(lines / 10) + 1;
+  updateStats();
+  state = 'playing';
+  spawn();
 }
 
 function rotate(shape) {
   return shape[0].map((_, i) => shape.map(row => row[i]).reverse());
 }
 
-let dropCounter = 0;
-const dropInterval = 30;
-
-function update() {
-  dropCounter++;
-  if (dropCounter > dropInterval) {
-    if (!collision(current.shape, current.x, current.y + 1)) {
-      current.y++;
-    } else {
-      merge();
-      clearLines();
-      spawn();
+function tryRotate() {
+  const rotated = rotate(current.shape);
+  for (const dx of [0, -1, 1, -2, 2]) {
+    if (!collision(rotated, current.x + dx, current.y)) {
+      current.shape = rotated;
+      current.x += dx;
+      return;
     }
-    dropCounter = 0;
+  }
+}
+
+function ghostY() {
+  let y = current.y;
+  while (!collision(current.shape, current.x, y + 1)) y++;
+  return y;
+}
+
+function hardDrop() {
+  const y = ghostY();
+  score += (y - current.y) * 2;
+  current.y = y;
+  updateStats();
+  lockPiece();
+}
+
+function softDrop() {
+  if (!collision(current.shape, current.x, current.y + 1)) {
+    current.y++;
+    score++;
+    updateStats();
+  } else {
+    lockPiece();
+  }
+  dropTimer = 0;
+}
+
+function holdPiece() {
+  if (!canHold) return;
+  const old = current;
+  if (hold) {
+    current = newPiece(hold.idx);
+  } else {
+    current = next;
+    next = randomPiece();
+  }
+  hold = newPiece(old.idx);
+  canHold = false;
+  dropTimer = 0;
+  if (collision(current.shape, current.x, current.y)) gameOver();
+}
+
+function update(dt) {
+  particles.forEach(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt; p.life -= dt; });
+  particles = particles.filter(p => p.life > 0);
+  if (state === 'clearing') {
+    clearTimer += dt * 1000;
+    if (clearTimer >= CLEAR_MS) finishClear();
+    return;
+  }
+  if (state !== 'playing') return;
+  dropTimer += dt * 1000;
+  if (dropTimer >= dropInterval()) {
+    dropTimer = 0;
+    if (!collision(current.shape, current.x, current.y + 1)) current.y++;
+    else lockPiece();
   }
 }
 
 document.addEventListener('keydown', e => {
+  if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+    e.preventDefault();
+    togglePause();
+    return;
+  }
+  if (state === 'over' && (e.key === 'Enter')) { reset(); return; }
+  if (state !== 'playing') return;
+  if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', ' '].includes(e.key)) e.preventDefault();
   if (e.key === 'ArrowLeft' && !collision(current.shape, current.x - 1, current.y)) current.x--;
-  if (e.key === 'ArrowRight' && !collision(current.shape, current.x + 1, current.y)) current.x++;
-  if (e.key === 'ArrowDown') {
-    if (!collision(current.shape, current.x, current.y + 1)) current.y++;
-    dropCounter = 0;
-  }
-  if (e.key === 'ArrowUp' || e.key === ' ') {
-    const rotated = rotate(current.shape);
-    if (!collision(rotated, current.x, current.y)) current.shape = rotated;
-  }
+  else if (e.key === 'ArrowRight' && !collision(current.shape, current.x + 1, current.y)) current.x++;
+  else if (e.key === 'ArrowDown') softDrop();
+  else if (e.key === 'ArrowUp') tryRotate();
+  else if (e.key === ' ') hardDrop();
+  else if (e.key === 'c' || e.key === 'C') holdPiece();
 });
+
+ovBtn.addEventListener('click', () => {
+  if (state === 'over') reset();
+  else if (state === 'paused') togglePause();
+});
+
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') togglePause(); });
+
+function drawCell(g, x, y, color, size, alpha) {
+  g.globalAlpha = alpha === undefined ? 1 : alpha;
+  g.fillStyle = color;
+  g.fillRect(x * size, y * size, size - 1, size - 1);
+  g.globalAlpha = 1;
+}
+
+function drawPreview(g, piece) {
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, 120, 120);
+  if (!piece) return;
+  const s = 24, w = piece.shape[0].length, h = piece.shape.length;
+  const ox = (5 - w) / 2, oy = (5 - h) / 2;
+  piece.shape.forEach((row, r) => row.forEach((v, c) => { if (v) drawCell(g, ox + c, oy + r, piece.color, s); }));
+}
 
 function draw() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  // Board
+  ctx.strokeStyle = '#220';
+  for (let i = 1; i < COLS; i++) { ctx.beginPath(); ctx.moveTo(i * BLOCK, 0); ctx.lineTo(i * BLOCK, canvas.height); ctx.stroke(); }
+  for (let i = 1; i < ROWS; i++) { ctx.beginPath(); ctx.moveTo(0, i * BLOCK); ctx.lineTo(canvas.width, i * BLOCK); ctx.stroke(); }
   board.forEach((row, r) => {
+    const flash = clearRows.includes(r);
     row.forEach((color, c) => {
-      if (color) {
-        ctx.fillStyle = color;
-        ctx.fillRect(c * BLOCK, r * BLOCK, BLOCK - 1, BLOCK - 1);
-      }
+      if (!color) return;
+      if (flash) {
+        const on = Math.floor(clearTimer / 60) % 2 === 0;
+        drawCell(ctx, c, r, on ? '#fff' : '#ff0', BLOCK, 1 - clearTimer / CLEAR_MS * 0.7);
+      } else drawCell(ctx, c, r, color, BLOCK);
     });
   });
-  // Current
-  current.shape.forEach((row, r) => {
-    row.forEach((val, c) => {
-      if (val) {
-        ctx.fillStyle = current.color;
-        ctx.fillRect((current.x + c) * BLOCK, (current.y + r) * BLOCK, BLOCK - 1, BLOCK - 1);
-      }
-    });
+  if (state !== 'clearing' && state !== 'over') {
+    const gy = ghostY();
+    current.shape.forEach((row, r) => row.forEach((v, c) => {
+      if (v) drawCell(ctx, current.x + c, gy + r, current.color, BLOCK, 0.2);
+    }));
+    current.shape.forEach((row, r) => row.forEach((v, c) => {
+      if (v) drawCell(ctx, current.x + c, current.y + r, current.color, BLOCK);
+    }));
+  }
+  particles.forEach(p => {
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
   });
+  ctx.globalAlpha = 1;
+  drawPreview(nextCtx, next);
+  drawPreview(holdCtx, hold);
 }
 
-function loop() {
-  update();
+function loop(t) {
+  const dt = Math.min(0.1, (t - lastTime) / 1000 || 0);
+  lastTime = t;
+  update(dt);
   draw();
   requestAnimationFrame(loop);
 }
-loop();
+reset();
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
