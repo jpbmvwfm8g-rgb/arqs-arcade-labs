@@ -2,44 +2,138 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ARQS Project Cost Estimator Lab</title>
 <style>
-body { background: #111; color: #eee; font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
-label { display: block; margin: 12px 0 4px; }
-input, select { width: 100%; padding: 8px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; }
-button { margin-top: 20px; padding: 10px 20px; background: #0a84ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-.result { margin-top: 20px; padding: 16px; background: #222; border-radius: 8px; }
+body { background: #111; color: #eee; font-family: system-ui, sans-serif; max-width: 680px; margin: 40px auto; padding: 20px; }
+h1 { color: #0a84ff; }
+label { display: block; margin: 14px 0 6px; font-weight: 500; }
+input, select { width: 100%; padding: 10px; background: #222; color: #fff; border: 1px solid #444; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+button { margin-top: 24px; padding: 12px 24px; background: #0a84ff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; }
+button:hover { background: #0066cc; }
+.result { margin-top: 24px; padding: 18px; background: #1a1a1a; border-radius: 8px; border-left: 4px solid #0a84ff; }
+.breakdown { margin-top: 12px; font-size: 0.95em; }
+small { color: #aaa; }
+.row { display: flex; gap: 12px; }
+.row > div { flex: 1; }
+@media (max-width: 500px) { .row { flex-direction: column; } }
 </style>
 </head>
 <body>
 <h1>ARQS Project Cost Estimator Lab</h1>
-<p>Educational mini-app for rough commercial / healthcare project cost ranges. Not a formal estimate.</p>
-<label>Project Type</label>
-<select id="type">
-  <option value="commercial">Commercial</option>
-  <option value="healthcare">Healthcare</option>
-  <option value="industrial">Industrial-Energy</option>
-  <option value="residential">Residential</option>
-</select>
-<label>Square Footage</label>
-<input type="number" id="sqft" value="5000" min="100">
-<label>Complexity (1-5)</label>
-<input type="range" id="complexity" min="1" max="5" value="3" oninput="this.nextElementSibling.value=this.value">
-<output>3</output>
+<p>Educational mini-app for rough commercial / healthcare / industrial / residential project cost ranges. Not a formal estimate or bid.</p>
+
+<div class="row">
+  <div>
+    <label for="type">Project Type</label>
+    <select id="type">
+      <option value="commercial">Commercial</option>
+      <option value="healthcare">Healthcare</option>
+      <option value="industrial">Industrial-Energy</option>
+      <option value="residential">Residential</option>
+    </select>
+  </div>
+  <div>
+    <label for="region">Region Factor</label>
+    <select id="region">
+      <option value="1.0">National Average (1.0)</option>
+      <option value="1.15">High-Cost Metro (1.15)</option>
+      <option value="0.9">Lower-Cost Area (0.9)</option>
+      <option value="1.05">West Coast / Canada (1.05)</option>
+    </select>
+  </div>
+</div>
+
+<label for="sqft">Square Footage</label>
+<input type="number" id="sqft" value="5000" min="100" step="100">
+
+<label for="complexity">Complexity (1-5)</label>
+<input type="range" id="complexity" min="1" max="5" value="3" oninput="document.getElementById('compOut').value=this.value">
+<output id="compOut">3</output>
+
+<label for="contingency">Contingency %</label>
+<input type="number" id="contingency" value="10" min="0" max="30" step="1">
+
 <button onclick="estimate()">Calculate Range</button>
+<button onclick="resetForm()" style="background:#444; margin-left:10px;">Reset</button>
+
 <div class="result" id="out">Enter details and calculate.</div>
+
 <script>
 const rates = {commercial: 250, healthcare: 450, industrial: 320, residential: 180};
+const STORAGE_KEY = 'arqsCostEstimatorInputs';
+
+function loadInputs() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (data.type) document.getElementById('type').value = data.type;
+      if (data.region) document.getElementById('region').value = data.region;
+      if (data.sqft) document.getElementById('sqft').value = data.sqft;
+      if (data.complexity) {
+        document.getElementById('complexity').value = data.complexity;
+        document.getElementById('compOut').value = data.complexity;
+      }
+      if (data.contingency != null) document.getElementById('contingency').value = data.contingency;
+    }
+  } catch (e) {}
+}
+
+function saveInputs() {
+  try {
+    const data = {
+      type: document.getElementById('type').value,
+      region: document.getElementById('region').value,
+      sqft: document.getElementById('sqft').value,
+      complexity: document.getElementById('complexity').value,
+      contingency: document.getElementById('contingency').value
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {}
+}
+
 function estimate() {
   const type = document.getElementById('type').value;
-  const sqft = +document.getElementById('sqft').value;
+  const region = parseFloat(document.getElementById('region').value);
+  const sqft = +document.getElementById('sqft').value || 0;
   const comp = +document.getElementById('complexity').value;
-  const base = rates[type] * sqft;
+  const contingency = (+document.getElementById('contingency').value || 0) / 100;
+
+  const baseRate = rates[type] || 250;
+  const base = baseRate * sqft * region;
   const factor = 0.8 + (comp - 1) * 0.15;
-  const low = Math.round(base * factor * 0.85);
-  const high = Math.round(base * factor * 1.25);
-  document.getElementById('out').innerHTML = `<strong>Estimated Range:</strong><br>$${low.toLocaleString()} – $${high.toLocaleString()} USD<br><small>Base rate $${rates[type]}/sf × complexity factor. Educational only.</small>`;
+  const adjusted = base * factor;
+  const withCont = adjusted * (1 + contingency);
+  const low = Math.round(withCont * 0.85);
+  const high = Math.round(withCont * 1.25);
+
+  document.getElementById('out').innerHTML = `
+    <strong>Estimated Range:</strong><br>
+    $${low.toLocaleString()} – $${high.toLocaleString()} USD<br>
+    <div class="breakdown">
+      Base: $${baseRate}/sf × ${sqft.toLocaleString()} sf × region ${region} = $${Math.round(base).toLocaleString()}<br>
+      Complexity factor: ${factor.toFixed(2)} → $${Math.round(adjusted).toLocaleString()}<br>
+      Contingency ${(contingency*100).toFixed(0)}% → $${Math.round(withCont).toLocaleString()} midpoint<br>
+      Range: ±15-25% typical variance
+    </div>
+    <small>Educational only. Real costs depend on site, scope, materials, labor, permits, and market conditions. ARQS Software Intelligence Systems.</small>
+  `;
+  saveInputs();
 }
+
+function resetForm() {
+  document.getElementById('type').value = 'commercial';
+  document.getElementById('region').value = '1.0';
+  document.getElementById('sqft').value = 5000;
+  document.getElementById('complexity').value = 3;
+  document.getElementById('compOut').value = 3;
+  document.getElementById('contingency').value = 10;
+  document.getElementById('out').innerHTML = 'Enter details and calculate.';
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+}
+
+loadInputs();
 </script>
 </body>
 </html>

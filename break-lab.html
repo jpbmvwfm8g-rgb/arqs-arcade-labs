@@ -2,123 +2,259 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ARQS Break Lab</title>
 <style>
 body { background: #111; color: #0ff; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
-canvas { border: 2px solid #0ff; background: #000; }
+#wrap { position: relative; }
+canvas { border: 2px solid #0ff; background: #000; display: block; }
+#overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.75); color: #0ff; text-align: center; }
+#overlay.hidden { display: none; }
+#overlay h2 { margin: 0 0 8px; text-shadow: 0 0 10px #0ff; }
+#overlay p { margin: 4px 0; }
 </style>
 </head>
 <body>
 <h1>ARQS Break Lab</h1>
 <div>Score: <span id="score">0</span> | Lives: <span id="lives">3</span> | Best: <span id="best">0</span></div>
+<div id="wrap">
 <canvas id="game" width="600" height="500"></canvas>
-<p>Move paddle with mouse or arrows. Clear the blocks!</p>
+<div id="overlay" role="status" aria-live="polite"><h2 id="ovTitle"></h2><p id="ovText"></p><p id="ovHint"></p></div>
+</div>
+<p>Move paddle with mouse or &larr; &rarr; / A D. Space or P to pause. Clear the blocks!</p>
 <script>
+const store = (() => { try { const k = '__arqs_t'; localStorage.setItem(k, k); localStorage.removeItem(k); return localStorage; } catch (e) { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } }; } })();
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-let paddle = {x: 250, y: 470, w: 100, h: 15};
-let ball = {x: 300, y: 400, dx: 4, dy: -4, r: 8};
-let score = 0;
-let lives = 3;
-let best = parseInt(localStorage.getItem('arqsBreakBest') || '0');
+const overlay = document.getElementById('overlay');
+const START_LIVES = 3, PADDLE_SPEED = 8, BASE_SPEED = 5;
+const paddle = {x: 250, y: 470, w: 100, h: 15};
+const ball = {x: 300, y: 400, dx: 0, dy: 0, r: 8};
+let score, lives, bricks = [], particles = [];
+let state = 'ready'; // ready | playing | paused | over | won
+const keys = {left: false, right: false};
+let best = (parseInt(store.getItem('arqsBreakBest') || '0', 10) || 0);
 document.getElementById('best').textContent = best;
-let bricks = [];
 const brickRows = 5, brickCols = 8, brickW = 60, brickH = 20, brickPad = 10, brickOffsetTop = 50, brickOffsetLeft = 35;
+
+function showOverlay(title, text, hint) {
+  document.getElementById('ovTitle').textContent = title;
+  document.getElementById('ovText').textContent = text;
+  document.getElementById('ovHint').textContent = hint;
+  overlay.classList.remove('hidden');
+}
+function hideOverlay() { overlay.classList.add('hidden'); }
+
+function updateHud() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = lives;
+  document.getElementById('best').textContent = best;
+}
 
 function initBricks() {
   bricks = [];
   for (let c = 0; c < brickCols; c++) {
     bricks[c] = [];
     for (let r = 0; r < brickRows; r++) {
-      bricks[c][r] = {x: 0, y: 0, status: 1, color: `hsl(${r * 40}, 100%, 50%)`};
+      bricks[c][r] = {
+        x: c * (brickW + brickPad) + brickOffsetLeft,
+        y: r * (brickH + brickPad) + brickOffsetTop,
+        status: 1, color: `hsl(${r * 40}, 100%, 50%)`
+      };
     }
   }
 }
-initBricks();
 
-document.addEventListener('mousemove', e => {
-  const rect = canvas.getBoundingClientRect();
-  paddle.x = e.clientX - rect.left - paddle.w / 2;
+function resetBall() {
+  ball.x = paddle.x + paddle.w / 2;
+  ball.y = paddle.y - ball.r - 1;
+  ball.dx = 0; ball.dy = 0;
+}
+
+function launchBall() {
+  const dir = Math.random() < 0.5 ? -1 : 1;
+  ball.dx = dir * BASE_SPEED * 0.6;
+  ball.dy = -BASE_SPEED;
+}
+
+function newGame() {
+  score = 0; lives = START_LIVES; particles = [];
+  initBricks();
+  paddle.x = (canvas.width - paddle.w) / 2;
+  resetBall();
+  updateHud();
+  state = 'ready';
+  showOverlay('ARQS BREAK LAB', 'Press Space, P or click to launch', 'Mouse or \u2190 \u2192 to move');
+}
+
+function spawnParticles(x, y, color, count, speed) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2, v = (0.3 + Math.random()) * speed;
+    particles.push({x, y, dx: Math.cos(a) * v, dy: Math.sin(a) * v, life: 1, color});
+  }
+}
+
+function togglePause() {
+  if (state === 'playing') {
+    state = 'paused';
+    showOverlay('PAUSED', 'Press Space or P to resume', '');
+  } else if (state === 'paused') {
+    state = 'playing';
+    hideOverlay();
+  }
+}
+
+function primaryAction() {
+  if (state === 'ready') {
+    state = 'playing'; hideOverlay(); launchBall();
+  } else if (state === 'over' || state === 'won') {
+    newGame();
+  } else {
+    togglePause();
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { keys.left = true; e.preventDefault(); }
+  else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { keys.right = true; e.preventDefault(); }
+  else if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'p' || e.key === 'P') {
+    e.preventDefault();
+    if (!e.repeat) primaryAction();
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+  else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+});
+window.addEventListener('blur', () => { keys.left = keys.right = false; if (state === 'playing') togglePause(); });
+canvas.addEventListener('click', () => { if (state === 'ready' || state === 'over' || state === 'won') primaryAction(); });
+overlay.addEventListener('click', () => { if (state === 'ready' || state === 'over' || state === 'won') primaryAction(); });
+
+function clampPaddle() {
   if (paddle.x < 0) paddle.x = 0;
   if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
+}
+
+document.addEventListener('mousemove', e => {
+  if (state === 'paused' || state === 'over' || state === 'won') return;
+  const rect = canvas.getBoundingClientRect();
+  paddle.x = e.clientX - rect.left - paddle.w / 2;
+  clampPaddle();
 });
 
+function addScore(n) {
+  score += n;
+  if (score > best) {
+    best = score;
+    store.setItem('arqsBreakBest', best);
+  }
+  updateHud();
+}
+
 function collisionDetection() {
+  let remaining = 0;
+  let hit = false;
   for (let c = 0; c < brickCols; c++) {
     for (let r = 0; r < brickRows; r++) {
       const b = bricks[c][r];
-      if (b.status === 1) {
-        if (ball.x > b.x && ball.x < b.x + brickW && ball.y > b.y && ball.y < b.y + brickH) {
-          ball.dy = -ball.dy;
-          b.status = 0;
-          score += 10;
-          document.getElementById('score').textContent = score;
-          if (score > best) {
-            best = score;
-            localStorage.setItem('arqsBreakBest', best);
-            document.getElementById('best').textContent = best;
-          }
-          // Check win
-          let allGone = true;
-          for (let cc = 0; cc < brickCols; cc++) {
-            for (let rr = 0; rr < brickRows; rr++) {
-              if (bricks[cc][rr].status === 1) allGone = false;
-            }
-          }
-          if (allGone) {
-            alert('You cleared the board! Score: ' + score);
-            document.location.reload();
-          }
-        }
-      }
+      if (b.status !== 1) continue;
+      remaining++;
+      if (hit) continue;
+      // circle vs rectangle
+      const nx = Math.max(b.x, Math.min(ball.x, b.x + brickW));
+      const ny = Math.max(b.y, Math.min(ball.y, b.y + brickH));
+      const ddx = ball.x - nx, ddy = ball.y - ny;
+      if (ddx * ddx + ddy * ddy > ball.r * ball.r) continue;
+      // reflect on the axis of least penetration
+      const overlapX = Math.min(ball.x + ball.r - b.x, b.x + brickW - (ball.x - ball.r));
+      const overlapY = Math.min(ball.y + ball.r - b.y, b.y + brickH - (ball.y - ball.r));
+      if (overlapX < overlapY) ball.dx = -ball.dx; else ball.dy = -ball.dy;
+      b.status = 0;
+      hit = true;
+      remaining--;
+      spawnParticles(b.x + brickW / 2, b.y + brickH / 2, b.color, 14, 3);
+      addScore(10);
     }
+  }
+  if (hit && remaining === 0) {
+    state = 'won';
+    showOverlay('BOARD CLEARED', 'Score: ' + score, 'Press Space or click to play again');
+  }
+}
+
+function loseLife() {
+  lives--;
+  spawnParticles(Math.max(0, Math.min(ball.x, canvas.width)), canvas.height - 4, '#f33', 24, 4);
+  updateHud();
+  if (lives <= 0) {
+    state = 'over';
+    showOverlay('GAME OVER', 'Score: ' + score, 'Press Space or click to retry');
+  } else {
+    resetBall();
+    state = 'ready';
+    showOverlay('MISS!', 'Lives left: ' + lives, 'Press Space or click to launch');
   }
 }
 
 function update() {
+  if (keys.left) paddle.x -= PADDLE_SPEED;
+  if (keys.right) paddle.x += PADDLE_SPEED;
+  clampPaddle();
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.dx; p.y += p.dy; p.dy += 0.08; p.life -= 0.03;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  if (state === 'ready') { resetBall(); return; }
+  if (state !== 'playing') return;
+
   ball.x += ball.dx;
   ball.y += ball.dy;
-  if (ball.x + ball.r > canvas.width || ball.x - ball.r < 0) ball.dx = -ball.dx;
-  if (ball.y - ball.r < 0) ball.dy = -ball.dy;
-  else if (ball.y + ball.r > canvas.height) {
-    lives--;
-    document.getElementById('lives').textContent = lives;
-    if (!lives) {
-      alert('Game Over! Score: ' + score);
-      document.location.reload();
-    } else {
-      ball.x = 300; ball.y = 400; ball.dx = 4; ball.dy = -4;
-    }
-  }
-  // Paddle
-  if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
-    ball.dy = -Math.abs(ball.dy);
+  if (ball.x + ball.r > canvas.width) { ball.x = canvas.width - ball.r; ball.dx = -ball.dx; }
+  else if (ball.x - ball.r < 0) { ball.x = ball.r; ball.dx = -ball.dx; }
+  if (ball.y - ball.r < 0) { ball.y = ball.r; ball.dy = -ball.dy; }
+
+  // Paddle: only when descending; angle depends on hit position
+  if (ball.dy > 0 && ball.y + ball.r >= paddle.y && ball.y - ball.r <= paddle.y + paddle.h &&
+      ball.x + ball.r > paddle.x && ball.x - ball.r < paddle.x + paddle.w) {
+    const rel = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+    const clamped = Math.max(-0.9, Math.min(0.9, rel));
+    const speed = Math.min(Math.hypot(ball.dx, ball.dy) + 0.1, 9);
+    const angle = clamped * (Math.PI / 3);
+    ball.dx = speed * Math.sin(angle);
+    ball.dy = -speed * Math.cos(angle);
+    ball.y = paddle.y - ball.r;
+    spawnParticles(ball.x, paddle.y, '#0ff', 6, 2);
+  } else if (ball.y - ball.r > canvas.height) {
+    loseLife();
+    return;
   }
   collisionDetection();
 }
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  // Bricks
   for (let c = 0; c < brickCols; c++) {
     for (let r = 0; r < brickRows; r++) {
-      if (bricks[c][r].status === 1) {
-        const brickX = c * (brickW + brickPad) + brickOffsetLeft;
-        const brickY = r * (brickH + brickPad) + brickOffsetTop;
-        bricks[c][r].x = brickX;
-        bricks[c][r].y = brickY;
-        ctx.fillStyle = bricks[c][r].color;
-        ctx.fillRect(brickX, brickY, brickW, brickH);
+      const b = bricks[c][r];
+      if (b.status === 1) {
+        ctx.fillStyle = b.color;
+        ctx.fillRect(b.x, b.y, brickW, brickH);
       }
     }
   }
-  // Ball
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+  }
+  ctx.globalAlpha = 1;
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
   ctx.fillStyle = '#0ff';
   ctx.fill();
-  // Paddle
-  ctx.fillStyle = '#0ff';
   ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
 }
 
@@ -127,6 +263,7 @@ function loop() {
   draw();
   requestAnimationFrame(loop);
 }
+newGame();
 loop();
 </script>
 </body>

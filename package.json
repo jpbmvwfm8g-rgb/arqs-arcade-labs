@@ -1,0 +1,10 @@
+{
+  "name": "arqs-arcade-labs",
+  "version": "1.0.0-rc1",
+  "private": true,
+  "description": "ARQS Arcade Labs — static HTML5 canvas games and labs",
+  "scripts": {
+    "test": "node tests/static.test.cjs",
+    "test:smoke": "python3 tests/smoke.py"
+  }
+}
