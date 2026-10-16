@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARQS Paddle Lab Enhanced</title>
+<style>
+body { background: #111; color: #0f0; font-family: 'Courier New', monospace; display: flex; flex-direction: column; align-items: center; margin: 0; padding: 10px; }
+canvas { border: 2px solid #0f0; background: #000; max-width: 100%; height: auto; touch-action: none; }
+.hud { margin: 10px; font-size: 1.1em; }
+button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 5px; cursor: pointer; font-family: inherit; }
+button:hover { background: #0c0; }
+#overlay { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.9); padding: 20px; border: 2px solid #0f0; display: none; text-align: center; z-index: 10; }
+</style>
+</head>
+<body>
+<h1>ARQS Paddle Lab Enhanced</h1>
+<div class="hud">
+  Score: <span id="score">0</span> | Best: <span id="best">0</span> | Lives: <span id="lives">3</span> | Level: <span id="level">1</span>
+</div>
+<canvas id="game" width="800" height="500"></canvas>
+<div>
+  <button id="pauseBtn">Pause (P)</button>
+  <button id="restartBtn">Restart</button>
+</div>
+<p>Mouse / Arrows / WASD / Touch to move. Space or click to launch/pause.</p>
+<div id="overlay"><h2 id="overlayTitle"></h2><p id="overlayMsg"></p><button id="overlayBtn">Play Again</button></div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const bestEl = document.getElementById('best');
+const livesEl = document.getElementById('lives');
+const levelEl = document.getElementById('level');
+const overlay = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlayTitle');
+const overlayMsg = document.getElementById('overlayMsg');
+
+let ball = {x: 400, y: 250, dx: 5, dy: -4, r: 10, launched: false};
+let paddle = {x: 350, y: 470, w: 120, h: 15, speed: 8};
+let score = 0;
+let best = parseInt(localStorage.getItem('arqsPaddleBest') || '0');
+let lives = 3;
+let level = 1;
+let powerUps = [];
+let activePower = null;
+let powerTimer = 0;
+let paused = false;
+let keys = {};
+let audioCtx = null;
+
+bestEl.textContent = best;
+livesEl.textContent = lives;
+levelEl.textContent = level;
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playBeep(freq = 440, dur = 0.1) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.frequency.value = freq;
+  osc.type = 'square';
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+  osc.start();
+  osc.stop(audioCtx.currentTime + dur);
+}
+
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === 'p' || e.key === 'P' || e.key === ' ') togglePause();
+  if (!ball.launched && (e.key === ' ' || e.key === 'ArrowUp')) launchBall();
+  initAudio();
+});
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+function setPaddleFromX(clientX) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  paddle.x = (clientX - rect.left) * scaleX - paddle.w / 2;
+  clampPaddle();
+}
+canvas.addEventListener('mousemove', e => setPaddleFromX(e.clientX));
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  setPaddleFromX(e.touches[0].clientX);
+}, {passive: false});
+
+function clampPaddle() {
+  paddle.x = Math.max(0, Math.min(canvas.width - paddle.w, paddle.x));
+}
+
+function launchBall() {
+  if (!ball.launched) {
+    ball.launched = true;
+    ball.dx = (Math.random() - 0.5) * 6;
+    ball.dy = -4 - level * 0.3;
+    playBeep(600, 0.05);
+  }
+}
+
+function togglePause() {
+  if (lives <= 0) return;
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? 'Resume (P)' : 'Pause (P)';
+}
+
+function update() {
+  if (paused || !ball.launched) return;
+
+  if (keys['ArrowLeft'] || keys['a'] || keys['A']) paddle.x -= paddle.speed;
+  if (keys['ArrowRight'] || keys['d'] || keys['D']) paddle.x += paddle.speed;
+  clampPaddle();
+
+  ball.x += ball.dx;
+  ball.y += ball.dy;
+
+  if (ball.x - ball.r < 0 || ball.x + ball.r > canvas.width) {
+    ball.dx *= -1;
+    playBeep(300, 0.05);
+  }
+  if (ball.y - ball.r < 0) {
+    ball.dy *= -1;
+    playBeep(400, 0.05);
+  }
+
+  if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
+    ball.dy *= -1;
+    const hitPos = (ball.x - paddle.x) / paddle.w - 0.5;
+    ball.dx += hitPos * 4;
+    ball.dx = Math.max(-12, Math.min(12, ball.dx));
+    score += 10 * level;
+    scoreEl.textContent = score;
+    if (score > best) {
+      best = score;
+      localStorage.setItem('arqsPaddleBest', best);
+      bestEl.textContent = best;
+    }
+    playBeep(800, 0.08);
+    if (score >= level * 100) {
+      level++;
+      levelEl.textContent = level;
+      playBeep(1000, 0.2);
+    }
+    if (Math.random() < 0.2 && powerUps.length < 2) {
+      powerUps.push({
+        x: Math.random() * (canvas.width - 30) + 15,
+        y: 50,
+        type: Math.random() > 0.5 ? 'wide' : 'slow',
+        vy: 1.2 + level * 0.1
+      });
+    }
+  }
+
+  for (let i = powerUps.length - 1; i >= 0; i--) {
+    const pu = powerUps[i];
+    pu.y += pu.vy;
+    if (pu.y > paddle.y && pu.x > paddle.x && pu.x < paddle.x + paddle.w) {
+      activePower = pu.type;
+      powerTimer = 400;
+      if (pu.type === 'wide') paddle.w = 200;
+      if (pu.type === 'slow') {
+        ball.dx *= 0.6;
+        ball.dy *= 0.6;
+      }
+      powerUps.splice(i, 1);
+      playBeep(1200, 0.15);
+    } else if (pu.y > canvas.height) {
+      powerUps.splice(i, 1);
+    }
+  }
+
+  if (powerTimer > 0) {
+    powerTimer--;
+    if (powerTimer === 0) {
+      paddle.w = 120;
+      activePower = null;
+    }
+  }
+
+  if (ball.y + ball.r > canvas.height) {
+    lives--;
+    livesEl.textContent = lives;
+    playBeep(150, 0.3);
+    if (lives <= 0) {
+      gameOver();
+    } else {
+      resetBall();
+    }
+  }
+}
+
+function resetBall() {
+  ball = {x: canvas.width / 2, y: canvas.height / 2, dx: 5, dy: -4, r: 10, launched: false};
+  paddle.x = (canvas.width - paddle.w) / 2;
+  paddle.w = 120;
+  activePower = null;
+  powerTimer = 0;
+}
+
+function gameOver() {
+  paused = true;
+  overlayTitle.textContent = 'Game Over';
+  overlayMsg.textContent = `Score: ${score} | Level: ${level}`;
+  overlay.style.display = 'block';
+}
+
+function draw() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fillStyle = ball.launched ? '#0f0' : '#ff0';
+  ctx.fill();
+
+  ctx.fillStyle = activePower === 'wide' ? '#0ff' : '#0f0';
+  ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+
+  powerUps.forEach(pu => {
+    ctx.fillStyle = pu.type === 'wide' ? '#0ff' : '#f0f';
+    ctx.fillRect(pu.x - 10, pu.y - 10, 20, 20);
+    ctx.fillStyle = '#000';
+    ctx.font = '12px monospace';
+    ctx.fillText(pu.type[0].toUpperCase(), pu.x - 4, pu.y + 4);
+  });
+
+  if (!ball.launched && !paused) {
+    ctx.fillStyle = '#0f0';
+    ctx.font = '18px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Click or Space to launch', canvas.width / 2, canvas.height / 2 + 50);
+  }
+  if (paused && lives > 0) {
+    ctx.fillStyle = '#0f0';
+    ctx.font = '40px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('pauseBtn').onclick = togglePause;
+document.getElementById('restartBtn').onclick = () => {
+  score = 0; scoreEl.textContent = '0';
+  lives = 3; livesEl.textContent = '3';
+  level = 1; levelEl.textContent = '1';
+  powerUps = [];
+  paused = false;
+  overlay.style.display = 'none';
+  document.getElementById('pauseBtn').textContent = 'Pause (P)';
+  resetBall();
+};
+document.getElementById('overlayBtn').onclick = () => document.getElementById('restartBtn').click();
+canvas.addEventListener('click', () => { launchBall(); initAudio(); });
+
+loop();
+</script>
+</body>
+</html>
