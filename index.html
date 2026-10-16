@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ARQS Arcade Labs</title>
 <style>
 body { background: #0a0a0a; color: #0f0; font-family: 'Courier New', monospace; text-align: center; padding: 40px; }
@@ -10,6 +11,20 @@ h1 { font-size: 2.5em; text-shadow: 0 0 10px #0f0; }
 .game-card { background: #111; border: 2px solid #0f0; padding: 20px; width: 250px; border-radius: 10px; transition: transform 0.2s; }
 .game-card:hover { transform: scale(1.05); box-shadow: 0 0 20px #0f0; }
 a { color: #0f0; text-decoration: none; font-weight: bold; }
+a:hover, a:focus { text-decoration: underline; }
+.container { max-width: 1100px; margin: 0 auto; }
+.status { display: inline-block; font-size: 0.75em; padding: 2px 8px; margin-left: 6px; border: 1px solid #0f0; border-radius: 10px; vertical-align: middle; }
+.status.playable { background: #0f0; color: #000; }
+.status.draft { border-style: dashed; color: #ff0; border-color: #ff0; }
+.game-card h2 { font-size: 1.3em; }
+.how-to { max-width: 800px; margin: 50px auto 0; text-align: left; }
+.how-to h2 { text-align: center; text-shadow: 0 0 6px #0f0; }
+.how-to table { width: 100%; border-collapse: collapse; }
+.how-to th, .how-to td { border: 1px solid #0a0; padding: 8px 12px; vertical-align: top; }
+.how-to th { background: #111; }
+.legend { font-size: 0.85em; color: #0c0; }
+kbd { border: 1px solid #0f0; border-radius: 3px; padding: 0 4px; }
+footer { margin-top: 40px; }
 </style>
 <!-- Mixpanel analytics placeholder — replace PROJECT_TOKEN after connector auth -->
 <script>
@@ -22,34 +37,60 @@ a { color: #0f0; text-decoration: none; font-weight: bold; }
 <body>
 <h1>ARQS ARCADE LABS</h1>
 <p>Proof-of-concept interactive labs from the ARQS Software Intelligence Systems.</p>
+<div class="container">
+<p class="legend">Status: <span class="status playable">Playable</span> release candidate &nbsp; <span class="status draft">Prototype</span> early build, pending review</p>
 <div class="games">
   <div class="game-card">
     <h2>Paddle Lab</h2>
-    <p>Classic paddle defense with progressive speed and local high scores.</p>
+    <span class="status playable">Playable</span>
+    <p>Paddle defense with lives, levels, power-ups and local high scores.</p>
     <a href="paddle-lab.html">Play Now</a>
   </div>
   <div class="game-card">
     <h2>Break Lab</h2>
+    <span class="status playable">Playable</span>
     <p>Clear the colored blocks. Lives, scoring, and persistence.</p>
     <a href="break-lab.html">Play Now</a>
   </div>
   <div class="game-card">
     <h2>Drop Lab</h2>
+    <span class="status playable">Playable</span>
     <p>Stack falling shapes, clear lines, and climb the high score.</p>
     <a href="drop-lab.html">Play Now</a>
   </div>
   <div class="game-card">
+    <h2>Snake Lab</h2>
+    <span class="status draft">Prototype</span>
+    <p>Classic snake growth game with local high score.</p>
+    <a href="snake-lab.html">Play Now</a>
+  </div>
+  <div class="game-card">
     <h2>Risk Pulse</h2>
+    <span class="status playable">Playable</span>
     <p>Interactive dashboard with refreshable risk indicators.</p>
     <a href="risk-pulse.html">Open Lab</a>
   </div>
   <div class="game-card">
     <h2>Cost Estimator</h2>
+    <span class="status playable">Playable</span>
     <p>Educational project cost range calculator.</p>
     <a href="cost-estimator.html">Open Lab</a>
   </div>
 </div>
+<section class="how-to" id="how-to-play">
+  <h2>How to Play</h2>
+  <table>
+    <tr><th>Lab</th><th>Controls</th></tr>
+    <tr><td>Paddle Lab</td><td>Mouse, touch, <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> or <kbd>A</kbd>/<kbd>D</kbd> to move. Click, tap or <kbd>Space</kbd> to launch. <kbd>Space</kbd>/<kbd>P</kbd> pause. Catch W (wide) and S (slow) power-ups.</td></tr>
+    <tr><td>Break Lab</td><td>Mouse or <kbd>&larr;</kbd>/<kbd>&rarr;</kbd>, <kbd>A</kbd>/<kbd>D</kbd> to move. <kbd>Space</kbd>/<kbd>P</kbd> pause. Clear all blocks and keep your lives.</td></tr>
+    <tr><td>Drop Lab</td><td><kbd>&larr;</kbd>/<kbd>&rarr;</kbd> move, <kbd>&uarr;</kbd> rotate, <kbd>&darr;</kbd> soft drop, <kbd>Space</kbd> hard drop, <kbd>C</kbd> hold, <kbd>P</kbd>/<kbd>Esc</kbd> pause.</td></tr>
+    <tr><td>Snake Lab</td><td>Arrow keys to steer. Eat food, grow, avoid walls and your own tail.</td></tr>
+    <tr><td>Risk Pulse</td><td>Click <em>Refresh Indicators</em>. History chart and threshold colours persist locally; use reset to clear.</td></tr>
+    <tr><td>Cost Estimator</td><td>Choose a project type, region, square footage, complexity and contingency, then calculate. Inputs are saved locally.</td></tr>
+  </table>
+</section>
 <p style="margin-top: 40px;">All labs use pure HTML5 + vanilla JS. LocalStorage where applicable. Ready for ARQS integration events.</p>
-<p><small>ARQS Software · Kelowna, BC · 2026</small></p>
+<footer><small>ARQS Software · Kelowna, BC · 2026</small></footer>
+</div>
 </body>
 </html>
