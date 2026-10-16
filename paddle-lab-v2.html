@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ARQS Paddle Lab v2</title>
+<style>
+body { background: #111; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; margin: 0; }
+canvas { border: 2px solid #0f0; background: #000; touch-action: none; }
+.hud { margin: 10px; font-size: 18px; }
+button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 5px; cursor: pointer; font-family: monospace; }
+</style>
+</head>
+<body>
+<h1>ARQS Paddle Lab v2</h1>
+<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span> | Lives: <span id="lives">3</span> | Level: <span id="level">1</span></div>
+<canvas id="game" width="800" height="500"></canvas>
+<p>Mouse / Arrow keys / A D / Touch drag to move paddle. Survive!</p>
+<button id="restart">Restart</button>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let ball = {x: 400, y: 250, dx: 5, dy: 4, r: 10};
+let paddle = {x: 350, y: 470, w: 100, h: 15, speed: 8};
+let score = 0;
+let best = parseInt(localStorage.getItem('arqsPaddleBest') || '0');
+let lives = 3;
+let level = 1;
+let gameOver = false;
+document.getElementById('best').textContent = best;
+document.getElementById('lives').textContent = lives;
+document.getElementById('level').textContent = level;
+let keys = {};
+
+// Simple audio context for beeps (no external deps)
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+function beep(freq = 440, duration = 0.1) {
+  if (!audioCtx) audioCtx = new AudioContext();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keyup', e => keys[e.key] = false);
+
+function movePaddle(x) {
+  paddle.x = x - paddle.w / 2;
+  if (paddle.x < 0) paddle.x = 0;
+  if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
+}
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  movePaddle(e.clientX - rect.left);
+});
+
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const touch = e.touches[0];
+  movePaddle(touch.clientX - rect.left);
+}, {passive: false});
+
+document.getElementById('restart').addEventListener('click', resetGame);
+
+function resetGame() {
+  score = 0;
+  lives = 3;
+  level = 1;
+  gameOver = false;
+  ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = lives;
+  document.getElementById('level').textContent = level;
+}
+
+function update() {
+  if (gameOver) return;
+
+  // Paddle keyboard
+  if (keys['ArrowLeft'] || keys['a'] || keys['A']) paddle.x -= paddle.speed;
+  if (keys['ArrowRight'] || keys['d'] || keys['D']) paddle.x += paddle.speed;
+  if (paddle.x < 0) paddle.x = 0;
+  if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
+
+  ball.x += ball.dx;
+  ball.y += ball.dy;
+
+  // Walls
+  if (ball.x - ball.r < 0 || ball.x + ball.r > canvas.width) {
+    ball.dx *= -1;
+    beep(300, 0.05);
+  }
+  if (ball.y - ball.r < 0) {
+    ball.dy *= -1;
+    beep(300, 0.05);
+  }
+
+  // Paddle collision
+  if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
+    ball.dy *= -1;
+    const hitPos = (ball.x - paddle.x) / paddle.w - 0.5;
+    ball.dx += hitPos * 3;
+    score++;
+    document.getElementById('score').textContent = score;
+    beep(600, 0.08);
+    if (score > best) {
+      best = score;
+      localStorage.setItem('arqsPaddleBest', best);
+      document.getElementById('best').textContent = best;
+    }
+    // Level up every 5 points
+    if (score % 5 === 0) {
+      level++;
+      document.getElementById('level').textContent = level;
+      ball.dx *= 1.05;
+      ball.dy *= 1.05;
+    } else {
+      ball.dx *= 1.01;
+      ball.dy *= 1.01;
+    }
+  }
+
+  // Miss
+  if (ball.y + ball.r > canvas.height) {
+    lives--;
+    document.getElementById('lives').textContent = lives;
+    beep(150, 0.2);
+    if (lives <= 0) {
+      gameOver = true;
+      return;
+    }
+    ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Ball
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fillStyle = '#0f0';
+  ctx.fill();
+  // Paddle
+  ctx.fillStyle = '#0f0';
+  ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+  // Center line
+  ctx.strokeStyle = '#333';
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height / 2);
+  ctx.lineTo(canvas.width, canvas.height / 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (gameOver) {
+    ctx.fillStyle = '#f00';
+    ctx.font = '40px monospace';
+    ctx.fillText('GAME OVER', canvas.width/2 - 100, canvas.height/2);
+    ctx.font = '20px monospace';
+    ctx.fillText('Click Restart', canvas.width/2 - 70, canvas.height/2 + 40);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
