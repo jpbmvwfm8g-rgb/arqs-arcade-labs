@@ -7,24 +7,34 @@
 body { background: #111; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
 canvas { border: 2px solid #0f0; background: #000; }
 .hud { margin: 10px; }
+.pause-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 48px; display: none; }
 </style>
 </head>
 <body>
 <h1>ARQS Paddle Lab</h1>
-<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span></div>
+<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span> | Lives: <span id="lives">3</span></div>
 <canvas id="game" width="800" height="500"></canvas>
-<p>Use mouse or arrow keys / W S to move paddle. Keep the ball in play!</p>
+<p>Use mouse or arrow keys / A D to move paddle. Space or P to pause. Keep the ball in play!</p>
+<div class="pause-overlay" id="pause">PAUSED</div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let ball = {x: 400, y: 250, dx: 5, dy: 4, r: 10};
 let paddle = {x: 350, y: 470, w: 100, h: 15, speed: 8};
 let score = 0;
+let lives = 3;
 let best = parseInt(localStorage.getItem('arqsPaddleBest') || '0');
 document.getElementById('best').textContent = best;
 let keys = {};
+let paused = false;
 
-document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ' || e.key === 'p' || e.key === 'P') {
+    paused = !paused;
+    document.getElementById('pause').style.display = paused ? 'block' : 'none';
+  }
+});
 document.addEventListener('keyup', e => keys[e.key] = false);
 canvas.addEventListener('mousemove', e => {
   const rect = canvas.getBoundingClientRect();
@@ -33,7 +43,12 @@ canvas.addEventListener('mousemove', e => {
   if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
 });
 
+function resetBall() {
+  ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+}
+
 function update() {
+  if (paused) return;
   // Paddle keyboard
   if (keys['ArrowLeft'] || keys['a'] || keys['A']) paddle.x -= paddle.speed;
   if (keys['ArrowRight'] || keys['d'] || keys['D']) paddle.x += paddle.speed;
@@ -50,7 +65,6 @@ function update() {
   // Paddle collision
   if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
     ball.dy *= -1;
-    // Add some spin based on hit position
     const hitPos = (ball.x - paddle.x) / paddle.w - 0.5;
     ball.dx += hitPos * 3;
     score++;
@@ -60,37 +74,43 @@ function update() {
       localStorage.setItem('arqsPaddleBest', best);
       document.getElementById('best').textContent = best;
     }
-    // Speed up slightly
     ball.dx *= 1.02;
     ball.dy *= 1.02;
   }
 
   // Miss
   if (ball.y + ball.r > canvas.height) {
-    score = 0;
-    document.getElementById('score').textContent = score;
-    ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+    lives--;
+    document.getElementById('lives').textContent = lives;
+    if (lives <= 0) {
+      score = 0;
+      lives = 3;
+      document.getElementById('score').textContent = score;
+      document.getElementById('lives').textContent = lives;
+    }
+    resetBall();
   }
 }
 
 function draw() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  // Ball
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
   ctx.fillStyle = '#0f0';
   ctx.fill();
-  // Paddle
   ctx.fillStyle = '#0f0';
   ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
-  // Center line optional
   ctx.strokeStyle = '#333';
   ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(0, canvas.height / 2);
   ctx.lineTo(canvas.width, canvas.height / 2);
   ctx.stroke();
+  if (paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
 function loop() {
