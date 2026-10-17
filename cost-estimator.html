@@ -2,43 +2,73 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ARQS Project Cost Estimator Lab</title>
 <style>
-body { background: #111; color: #eee; font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
-label { display: block; margin: 12px 0 4px; }
-input, select { width: 100%; padding: 8px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; }
-button { margin-top: 20px; padding: 10px 20px; background: #0a84ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-.result { margin-top: 20px; padding: 16px; background: #222; border-radius: 8px; }
+body { background: #0a0a0a; color: #e0e0e0; font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 20px; }
+h1 { color: #0a84ff; }
+label { display: block; margin: 16px 0 6px; font-weight: 500; }
+input, select { width: 100%; padding: 10px; background: #1a1a1a; color: #fff; border: 1px solid #333; border-radius: 6px; font-size: 1rem; }
+input:focus, select:focus { outline: 2px solid #0a84ff; }
+.row { display: flex; gap: 16px; }
+.row > div { flex: 1; }
+button { margin-top: 24px; padding: 12px 24px; background: #0a84ff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 1rem; }
+button:hover { background: #0066cc; }
+.result { margin-top: 24px; padding: 20px; background: #1a1a1a; border-radius: 8px; border-left: 4px solid #0a84ff; }
+.disclaimer { font-size: 0.85rem; color: #888; margin-top: 12px; }
+.error { color: #ff6b6b; }
 </style>
 </head>
 <body>
 <h1>ARQS Project Cost Estimator Lab</h1>
-<p>Educational mini-app for rough commercial / healthcare project cost ranges. Not a formal estimate.</p>
-<label>Project Type</label>
-<select id="type">
-  <option value="commercial">Commercial</option>
-  <option value="healthcare">Healthcare</option>
-  <option value="industrial">Industrial-Energy</option>
-  <option value="residential">Residential</option>
-</select>
-<label>Square Footage</label>
-<input type="number" id="sqft" value="5000" min="100">
-<label>Complexity (1-5)</label>
-<input type="range" id="complexity" min="1" max="5" value="3" oninput="this.nextElementSibling.value=this.value">
-<output>3</output>
+<p>Educational mini-app for rough commercial / healthcare / industrial project cost ranges. Not a formal estimate or bid.</p>
+
+<div class="row">
+  <div>
+    <label for="type">Project Type</label>
+    <select id="type">
+      <option value="commercial">Commercial</option>
+      <option value="healthcare">Healthcare</option>
+      <option value="industrial">Industrial-Energy</option>
+      <option value="residential">Residential</option>
+    </select>
+  </div>
+  <div>
+    <label for="sqft">Square Footage</label>
+    <input type="number" id="sqft" value="5000" min="100" max="1000000" required>
+  </div>
+</div>
+
+<label for="complexity">Complexity (1-5)</label>
+<input type="range" id="complexity" min="1" max="5" value="3" oninput="document.getElementById('compOut').textContent=this.value">
+<output id="compOut">3</output>
+
+<label for="location">Location Multiplier (1.0 = baseline)</label>
+<input type="number" id="location" value="1.0" min="0.5" max="2.5" step="0.1">
+
 <button onclick="estimate()">Calculate Range</button>
 <div class="result" id="out">Enter details and calculate.</div>
+<p class="disclaimer">Base rates are illustrative only. Actual costs vary by location, materials, labor, codes, and scope. Educational use only — not for contracting or financial decisions. ARQS Software Intelligence Systems.</p>
+
 <script>
 const rates = {commercial: 250, healthcare: 450, industrial: 320, residential: 180};
 function estimate() {
   const type = document.getElementById('type').value;
   const sqft = +document.getElementById('sqft').value;
   const comp = +document.getElementById('complexity').value;
-  const base = rates[type] * sqft;
+  const loc = +document.getElementById('location').value;
+  const out = document.getElementById('out');
+
+  if (!sqft || sqft < 100 || sqft > 1000000 || !loc || loc < 0.5 || loc > 2.5) {
+    out.innerHTML = '<span class="error">Please enter valid square footage (100–1,000,000) and location multiplier (0.5–2.5).</span>';
+    return;
+  }
+
+  const base = rates[type] * sqft * loc;
   const factor = 0.8 + (comp - 1) * 0.15;
   const low = Math.round(base * factor * 0.85);
   const high = Math.round(base * factor * 1.25);
-  document.getElementById('out').innerHTML = `<strong>Estimated Range:</strong><br>$${low.toLocaleString()} – $${high.toLocaleString()} USD<br><small>Base rate $${rates[type]}/sf × complexity factor. Educational only.</small>`;
+  out.innerHTML = `<strong>Estimated Range:</strong><br>$${low.toLocaleString()} – $${high.toLocaleString()} USD<br><small>Base rate $${rates[type]}/sf × location × complexity factor. Educational only.</small>`;
 }
 </script>
 </body>
