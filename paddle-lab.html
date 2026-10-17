@@ -7,13 +7,20 @@
 body { background: #111; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
 canvas { border: 2px solid #0f0; background: #000; }
 .hud { margin: 10px; }
+button { background: #0f0; color: #000; border: none; padding: 8px 16px; margin: 5px; cursor: pointer; font-family: monospace; }
+button:hover { background: #0a0; }
+.paused { opacity: 0.7; }
 </style>
 </head>
 <body>
 <h1>ARQS Paddle Lab</h1>
-<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span></div>
+<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span> | <span id="status">Playing</span></div>
 <canvas id="game" width="800" height="500"></canvas>
-<p>Use mouse or arrow keys / W S to move paddle. Keep the ball in play!</p>
+<div>
+<button id="restart">Restart</button>
+<button id="pause">Pause</button>
+</div>
+<p>Use mouse or arrow keys / W S / A D to move paddle. Space to pause. Keep the ball in play!</p>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -23,17 +30,45 @@ let score = 0;
 let best = parseInt(localStorage.getItem('arqsPaddleBest') || '0');
 document.getElementById('best').textContent = best;
 let keys = {};
+let paused = false;
+const MAX_SPEED = 12;
 
-document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault();
+    togglePause();
+  }
+});
 document.addEventListener('keyup', e => keys[e.key] = false);
 canvas.addEventListener('mousemove', e => {
+  if (paused) return;
   const rect = canvas.getBoundingClientRect();
   paddle.x = e.clientX - rect.left - paddle.w / 2;
   if (paddle.x < 0) paddle.x = 0;
   if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
 });
 
+function togglePause() {
+  paused = !paused;
+  document.getElementById('status').textContent = paused ? 'Paused' : 'Playing';
+  document.getElementById('pause').textContent = paused ? 'Resume' : 'Pause';
+  canvas.classList.toggle('paused', paused);
+}
+
+function restart() {
+  score = 0;
+  document.getElementById('score').textContent = score;
+  ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+  if (paused) togglePause();
+}
+
+document.getElementById('restart').addEventListener('click', restart);
+document.getElementById('pause').addEventListener('click', togglePause);
+
 function update() {
+  if (paused) return;
+
   // Paddle keyboard
   if (keys['ArrowLeft'] || keys['a'] || keys['A']) paddle.x -= paddle.speed;
   if (keys['ArrowRight'] || keys['d'] || keys['D']) paddle.x += paddle.speed;
@@ -60,9 +95,11 @@ function update() {
       localStorage.setItem('arqsPaddleBest', best);
       document.getElementById('best').textContent = best;
     }
-    // Speed up slightly
+    // Speed up slightly but clamp
     ball.dx *= 1.02;
     ball.dy *= 1.02;
+    ball.dx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, ball.dx));
+    ball.dy = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, ball.dy));
   }
 
   // Miss
@@ -91,6 +128,14 @@ function draw() {
   ctx.moveTo(0, canvas.height / 2);
   ctx.lineTo(canvas.width, canvas.height / 2);
   ctx.stroke();
+  if (paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', canvas.width/2, canvas.height/2);
+  }
 }
 
 function loop() {
