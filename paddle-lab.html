@@ -7,33 +7,70 @@
 body { background: #111; color: #0f0; font-family: monospace; display: flex; flex-direction: column; align-items: center; }
 canvas { border: 2px solid #0f0; background: #000; }
 .hud { margin: 10px; }
+.controls { margin: 10px; }
+button { background: #0f0; color: #000; border: none; padding: 5px 10px; cursor: pointer; }
 </style>
 </head>
 <body>
 <h1>ARQS Paddle Lab</h1>
-<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span></div>
+<div class="hud">Score: <span id="score">0</span> | Best: <span id="best">0</span> | Lives: <span id="lives">3</span></div>
 <canvas id="game" width="800" height="500"></canvas>
-<p>Use mouse or arrow keys / W S to move paddle. Keep the ball in play!</p>
+<div class="controls">
+  <button id="pauseBtn">Pause (P)</button>
+  <button id="resetBtn">Reset</button>
+</div>
+<p>Use mouse or arrow keys / A D to move paddle. Keep the ball in play! Press P or Esc to pause.</p>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 let ball = {x: 400, y: 250, dx: 5, dy: 4, r: 10};
 let paddle = {x: 350, y: 470, w: 100, h: 15, speed: 8};
 let score = 0;
+let lives = 3;
 let best = parseInt(localStorage.getItem('arqsPaddleBest') || '0');
+let paused = false;
 document.getElementById('best').textContent = best;
+document.getElementById('lives').textContent = lives;
 let keys = {};
 
-document.addEventListener('keydown', e => keys[e.key] = true);
+document.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+    paused = !paused;
+    document.getElementById('pauseBtn').textContent = paused ? 'Resume (P)' : 'Pause (P)';
+  }
+});
 document.addEventListener('keyup', e => keys[e.key] = false);
 canvas.addEventListener('mousemove', e => {
+  if (paused) return;
   const rect = canvas.getBoundingClientRect();
   paddle.x = e.clientX - rect.left - paddle.w / 2;
   if (paddle.x < 0) paddle.x = 0;
   if (paddle.x + paddle.w > canvas.width) paddle.x = canvas.width - paddle.w;
 });
 
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? 'Resume (P)' : 'Pause (P)';
+});
+document.getElementById('resetBtn').addEventListener('click', resetGame);
+
+function resetBall() {
+  ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+}
+
+function resetGame() {
+  score = 0;
+  lives = 3;
+  paused = false;
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = lives;
+  document.getElementById('pauseBtn').textContent = 'Pause (P)';
+  resetBall();
+}
+
 function update() {
+  if (paused) return;
   // Paddle keyboard
   if (keys['ArrowLeft'] || keys['a'] || keys['A']) paddle.x -= paddle.speed;
   if (keys['ArrowRight'] || keys['d'] || keys['D']) paddle.x += paddle.speed;
@@ -46,6 +83,11 @@ function update() {
   // Walls
   if (ball.x - ball.r < 0 || ball.x + ball.r > canvas.width) ball.dx *= -1;
   if (ball.y - ball.r < 0) ball.dy *= -1;
+
+  // Cap speed
+  const maxSpeed = 12;
+  ball.dx = Math.max(-maxSpeed, Math.min(maxSpeed, ball.dx));
+  ball.dy = Math.max(-maxSpeed, Math.min(maxSpeed, ball.dy));
 
   // Paddle collision
   if (ball.y + ball.r > paddle.y && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
@@ -61,15 +103,21 @@ function update() {
       document.getElementById('best').textContent = best;
     }
     // Speed up slightly
-    ball.dx *= 1.02;
-    ball.dy *= 1.02;
+    ball.dx *= 1.01;
+    ball.dy *= 1.01;
   }
 
   // Miss
   if (ball.y + ball.r > canvas.height) {
-    score = 0;
-    document.getElementById('score').textContent = score;
-    ball = {x: 400, y: 250, dx: 5 * (Math.random() > 0.5 ? 1 : -1), dy: 4, r: 10};
+    lives--;
+    document.getElementById('lives').textContent = lives;
+    if (lives <= 0) {
+      // Game over
+      paused = true;
+      document.getElementById('pauseBtn').textContent = 'Game Over - Reset';
+    } else {
+      resetBall();
+    }
   }
 }
 
@@ -91,6 +139,14 @@ function draw() {
   ctx.moveTo(0, canvas.height / 2);
   ctx.lineTo(canvas.width, canvas.height / 2);
   ctx.stroke();
+  if (paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(lives <= 0 ? 'GAME OVER' : 'PAUSED', canvas.width/2, canvas.height/2);
+  }
 }
 
 function loop() {
